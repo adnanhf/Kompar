@@ -7,7 +7,7 @@
 #include <omp.h>
 
 #define B 50
-#define K 6
+#define K 7
 
 struct timeval start, end;
 double timeclock;
@@ -22,97 +22,95 @@ void BacaFile(FILE *file, char* matrix[B][K]){
         printf("File tidak ditemukan"); //Cek File ada atau tidak (perlukah?)
     }
 
-    if(!feof(file)){ //jika belum mencapai akhir file, maka
-        #pragma omp parallel
-       {
-        #pragma omp for schedule(static,8)
+#pragma omp parallel num_threads(7)
+{
+    #pragma omp single nowait
+    {
+        if(!feof(file)){ //jika belum mencapai akhir file, maka
+    #pragma omp task
+    {
         for(i = 0; i < B; i++){
-            for(j = 0; j < K; j++){
+            for(j = 0; j < K-1; j++){
                 fscanf(file,"%s",word); //baca file per maksimal 20 karakter
                 matrix[i][j]=strdup(word); //Duplikasi dari word untuk dimasukkan ke dalam matrix
             }
         }
-       }
     }
+        }
+    }
+}
     gettimeofday(&end, NULL);
     timeclock = ((end.tv_sec  - start.tv_sec) * 1000000u + end.tv_usec - start.tv_usec) / 1.e6;
     printf("Reading File Success \n");printf("Clock Time = %g \n",timeclock);
-    system("pause"); printf("\n \n");
-
-}
-
-float SelisihTahun(float Thn0,float ThnX){
-    return (ThnX-Thn0)*365;
+    printf("\n \n");
 }
 
 //Step 2: Parsing String ke Float
-void ParseAndSave(char* dataX[B][K],float parse[B][K-1]){
+void ParseAndSave(char* dataX[B][K],float parse[B][K-2]){
     gettimeofday(&start, NULL);
     printf("Parsing Data from String to Number...\n");
-    j=0; //Parsing Case Index String
-    #pragma omp parallel
 
-    #pragma omp for schedule(static,2)
+#pragma omp parallel num_threads(7)
+{
+#pragma omp for schedule(static,2)
     for(i=0;i<B;i++){
-        parse[i][j]=atof(dataX[i][j]);
-    }
-
-    j=1; k=3; //Parsing Half-Time String
-    #pragma omp for schedule(static,2)
-    for(i=0;i<B;i++){//This variable is based by days
-        parse[i][j]=atof(dataX[i][k]);
-    }
-
-    j=2; k=4; //Parsing Shut Down Year String
-    #pragma omp for schedule(static,2)
-    for(i=0;i<B;i++){ //Converting from years to days
-        parse[i][j]=atof(dataX[i][k]);
-        parse[i][j]=SelisihTahun(parse[i][j],2016);
-    }
-
-    j=3; k=5; //Parsing Mass when Reactor Shut Down String
-    #pragma omp for schedule(static,2)
-    for(i=0;i<B;i++){
-        parse[i][j]=atof(dataX[i][k]);
+        //Parsing Case Index String
+        parse[i][0]=atof(dataX[i][0]);
+        //Parsing Half-Time String
+        //This variable is based by days
+        parse[i][1]=atof(dataX[i][3]);
+        //Parsing Shut Down Year String
+        //Converting from years to days
+        parse[i][2]=atof(dataX[i][4]);
+        parse[i][2]=(2016-parse[i][2])*365;
+        //Parsing Mass when Reactor Shut Down String
+        parse[i][3]=atof(dataX[i][5]);
     }
 }
+
     //The Rest of Columns is Predict Result
     gettimeofday(&end, NULL);
     timeclock = ((end.tv_sec  - start.tv_sec) * 1000000u + end.tv_usec - start.tv_usec) / 1.e6;
     printf("Parsing Complete \n");printf("Clock Time = %g \n",timeclock);
-    system("pause"); printf("\n \n");
+    printf("\n \n");
 }
 
 //Step 3: Hitung Sisa Limbah pada tahun ini
-void Predict(float parse[B][K-1]){
+void Predict(float parse[B][K-2]){
     gettimeofday(&start, NULL);
     printf("Calculating data to Predict Nuclear Waste Mass\n"); j=4;
-    #pragma omp parallel
+
+#pragma omp parallel num_threads(7)
 {
-    #pragma omp for schedule(static,8)
-    for(i=0;i<B;i++){
-        parse[i][j]=parse[i][3]*(pow(0.5,(parse[i][2]/parse[i][1])));
-    }
+#pragma omp for schedule(static,2)
+        for(i=0;i<B;i++){
+            parse[i][j]=parse[i][3]*(pow(0.5,(parse[i][2]/parse[i][1])));
+        }
 }
+
     gettimeofday(&end, NULL);
     timeclock = ((end.tv_sec  - start.tv_sec) * 1000000u + end.tv_usec - start.tv_usec) / 1.e6;
     printf("Calculation Complete! \n");printf("Clock Time = %g \n",timeclock);
-    system("pause"); printf("\n \n");
+    printf("\n \n");
 }
 
 //Step 4: Print semua pabrik yang masih ada sisa limbahnya pada tahun ini
-void FindNotZero(float parse[B][K-1],char* dataX[B][K]){
-    gettimeofday(&start, NULL);
-    printf("Print Ex-Nuclear Plant that still have Nuclear Waste,"); system("pause");
-    #pragma omp parallel
+void FindNotZero(float parse[B][K-2],char* dataX[B][K]){
+    gettimeofday(&start, NULL); int th_id;
+    printf("Print Ex-Nuclear Plant that still have Nuclear Waste \n");
+
+#pragma omp parallel num_threads(7)
 {
-    #pragma omp for schedule(static,8)
+#pragma omp for schedule(static,2)
     for(i=0;i<B;i++){
         if(parse[i][4]!=0){
-        printf("%s\t %s\t %s\t %s\t %s\t %s\t %10.60f\n",dataX[i][0],dataX[i][1],dataX[i][2],dataX[i][3],dataX[i][4],dataX[i][5],parse[i][4]);
+        th_id=omp_get_thread_num();
+        printf(" Thread Id: %d ",th_id);
+        printf(" Nomor: %s\n Nama Pabrik: %s\n Bentuk Limbah: %s\tWaktu Paruh Isotop: %s Hari\t Tahun ditutup: %s\t Massa Limbah pada Tahun Tersebut: %s Pound\n Massa Limbah pada saat ini: %10.60f Pound\n \n",dataX[i][0],dataX[i][1],dataX[i][2],dataX[i][3],dataX[i][4],dataX[i][5],parse[i][4]);
         }
     }
 }
+
     gettimeofday(&end, NULL);
     timeclock = ((end.tv_sec  - start.tv_sec) * 1000000u + end.tv_usec - start.tv_usec) / 1.e6;
     printf("Clock Time = %g \n",timeclock);
@@ -122,11 +120,12 @@ void FindNotZero(float parse[B][K-1],char* dataX[B][K]){
 int main(){
 	FILE *baca;
 	char* data[B][K]; //Matrix yang menyimpan data dari txt File
-	float parsed[B][K-1];
+	float parsed[B][K-2];
+	float wp,cy,massa; //wp = waktu paruh, cy = close year, massa = jumlah limbah awal
 
 	gettimeofday(&start, NULL);
 
-	baca=fopen("database pabrik nuklir.txt","r");
+	baca=fopen("database 5000.txt","r");
 
     BacaFile(baca,data);
     fclose(baca);
